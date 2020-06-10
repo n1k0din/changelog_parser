@@ -14,7 +14,7 @@ IC_GROUP2_INDICATORS = {
 
 CHANGELOG_TYPES = {
     'ЛБv6': 'lb6',
-    'ЛБv6Pro': 'lbv6pro',
+    'ЛБv6Pro': 'lb6pro',
     'ЛБv7': 'lb7'
 }
 
@@ -155,23 +155,29 @@ def list_to_html(lst):
 
 
 def main():
-    source = file_to_list('multi_with_spec.txt')
+    try:
+        source = file_to_list('changes.txt')
+    except Exception:
+        exit("Для работы необходим файл с изменениями changes.txt!")
 
     common_logs = {}
     for i in find_start_of_common_part(source):
         log = extract_common_changelog(source, i)
         common_logs[log.name] = log
 
-    for log in common_logs:
-        print(f"Пред. версию для {log}"
-              f" ищем по шаблону {IE_NAME_PATTERN.format(int_to_dotted_str(common_logs[log].version - 1))}")
+    # for log in common_logs:
+    #     print(f"Пред. версию для {log}"
+    #           f" ищем по шаблону {IE_NAME_PATTERN.format(int_to_dotted_str(common_logs[log].version - 1))}")
 
     spec_logs = {}
     for i in find_start_of_special_part(source):
         log = extract_spec_changelog(source, i)
         spec_logs[log.name] = log
 
-    example = csv_to_list('from_lkds.ru.csv')
+    try:
+        example = csv_to_list('export.csv')
+    except Exception:
+        exit("Для работы необходим файл-выгрузка export.csv!")
 
     spec_names = spec_logs.keys()
 
@@ -184,31 +190,27 @@ def main():
         print(*not_in, sep='\n')
 
     res = []
-    wtf = []
     res_row = {}
-    lb_type = 'lb6'
-    new_v = common_logs[lb_type].version
-    prev_v = new_v - 1
-    for row in find_row(example, prev_v, lb_type):
-        res_row['IE_XML_ID'] = row['IE_XML_ID'].replace(str(prev_v), str(new_v))
-        res_row['IE_NAME'] = IE_NAME_PATTERN.format(int_to_dotted_str(new_v))
+    for lb_type in common_logs:
+        new_v = common_logs[lb_type].version
+        prev_v = new_v - 1
+        for row in find_row(example, prev_v, lb_type):
+            res_row['IE_XML_ID'] = row['IE_XML_ID'].replace(str(prev_v), str(new_v))
+            res_row['IE_NAME'] = IE_NAME_PATTERN.format(int_to_dotted_str(new_v))
 
-        changelog = common_logs[lb_type].changelog.copy()
-        if row['IC_GROUP1'] in spec_logs:
-            changelog += spec_logs[row['IC_GROUP1']].changelog
-        res_row['IE_PREVIEW_TEXT'] = list_to_html(changelog)
+            changelog = common_logs[lb_type].changelog.copy()
+            if row['IC_GROUP1'] in spec_logs:
+                changelog += spec_logs[row['IC_GROUP1']].changelog
+            res_row['IE_PREVIEW_TEXT'] = list_to_html(changelog)
 
-        res_row['IE_SORT'] = int(row['IE_SORT']) + 10
-        res_row['IP_PROP12'] = fix_date(common_logs[lb_type].date)
-        res_row['IP_PROP23'] = row['IP_PROP23'].replace(str(prev_v), str(new_v))
-        res_row['IC_GROUP0'] = row['IC_GROUP0']
-        res_row['IC_GROUP1'] = row['IC_GROUP1']
-        res_row['IC_GROUP2'] = row['IC_GROUP2']
+            res_row['IE_SORT'] = int(row['IE_SORT']) + 10
+            res_row['IP_PROP12'] = fix_date(common_logs[lb_type].date)
+            res_row['IP_PROP23'] = row['IP_PROP23'].replace(str(prev_v), str(new_v))
+            res_row['IC_GROUP0'] = row['IC_GROUP0']
+            res_row['IC_GROUP1'] = row['IC_GROUP1']
+            res_row['IC_GROUP2'] = row['IC_GROUP2']
 
-        res.append(res_row.copy())
-
-
-
+            res.append(res_row.copy())
 
     with open('res.csv', 'w', newline='') as csvfile:
         field_names = res[0].keys()
@@ -217,16 +219,8 @@ def main():
         writer.writeheader()
         for row in res:
             writer.writerow(row)
-
-
-
-
-
-
-
-
-
-
+        print(f"Ок, записано строк: {len(res)}. Нажмите любую клавишу для завершения...")
+        input()
 
 
 if __name__ == '__main__':
