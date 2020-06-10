@@ -137,6 +137,22 @@ def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
         last_names.add(row['IC_GROUP1'])
     return last_names
 
+# было dd.mm.yy. стало dd.mm.20yy
+
+def fix_date(date: str) -> str:
+    d, m, y = date.rstrip('.').split('.')
+    y = '20' + y
+    return '.'.join([d, m, y])
+
+
+def list_to_html(lst):
+    html = "<ul>"
+    for elem in lst:
+        html += "<li>{}</li>".format(elem)
+    html += "</ul>"
+    return html
+
+
 
 def main():
     source = file_to_list('multi_with_spec.txt')
@@ -167,11 +183,50 @@ def main():
         print("ВАЖНО! Есть в списке изменений, но нет в выгрузке с сайта: ")
         print(*not_in, sep='\n')
 
-    # for row in find_row(example, 711, 'lb7'):
-    #     print(row['IE_XML_ID'])
+    res = []
+    wtf = []
+    res_row = {}
+    lb_type = 'lb6'
+    new_v = common_logs[lb_type].version
+    prev_v = new_v - 1
+    for row in find_row(example, prev_v, lb_type):
+        res_row['IE_XML_ID'] = row['IE_XML_ID'].replace(str(prev_v), str(new_v))
+        res_row['IE_NAME'] = IE_NAME_PATTERN.format(int_to_dotted_str(new_v))
+
+        changelog = common_logs[lb_type].changelog.copy()
+        if row['IC_GROUP1'] in spec_logs:
+            changelog += spec_logs[row['IC_GROUP1']].changelog
+        res_row['IE_PREVIEW_TEXT'] = list_to_html(changelog)
+
+        res_row['IE_SORT'] = int(row['IE_SORT']) + 10
+        res_row['IP_PROP12'] = fix_date(common_logs[lb_type].date)
+        res_row['IP_PROP23'] = row['IP_PROP23'].replace(str(prev_v), str(new_v))
+        res_row['IC_GROUP0'] = row['IC_GROUP0']
+        res_row['IC_GROUP1'] = row['IC_GROUP1']
+        res_row['IC_GROUP2'] = row['IC_GROUP2']
+
+        res.append(res_row.copy())
 
 
-    # print(*source, sep='\n')
+
+
+    with open('res.csv', 'w', newline='') as csvfile:
+        field_names = res[0].keys()
+        writer = csv.DictWriter(csvfile, fieldnames=field_names, dialect='win')
+
+        writer.writeheader()
+        for row in res:
+            writer.writerow(row)
+
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == '__main__':
