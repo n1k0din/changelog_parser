@@ -6,6 +6,7 @@ common_log = namedtuple('common_log', ['name', 'version', 'date', 'changelog'])
 spec_log = namedtuple('spec_log', ['name', 'changelog'])
 
 IE_NAME_PATTERN = "Версия {}."
+
 IC_GROUP2_INDICATORS = {
     'lb6': 'ЛБ 6 CM3',
     'lb6pro': 'ЛБ 6.1 Pro CM3',
@@ -153,42 +154,23 @@ def list_to_html(lst):
     return html
 
 
-
-def main():
-    try:
-        source = file_to_list('changes.txt')
-    except Exception:
-        exit("Для работы необходим файл с изменениями changes.txt!")
-
+def get_common_logs(src: t.List[str]) -> t.Dict[str, common_log]:
     common_logs = {}
-    for i in find_start_of_common_part(source):
-        log = extract_common_changelog(source, i)
+    for i in find_start_of_common_part(src):
+        log = extract_common_changelog(src, i)
         common_logs[log.name] = log
+    return common_logs
 
-    # for log in common_logs:
-    #     print(f"Пред. версию для {log}"
-    #           f" ищем по шаблону {IE_NAME_PATTERN.format(int_to_dotted_str(common_logs[log].version - 1))}")
 
+def get_spec_logs(src: t.List[str]) -> t.Dict[str, spec_log]:
     spec_logs = {}
-    for i in find_start_of_special_part(source):
-        log = extract_spec_changelog(source, i)
+    for i in find_start_of_special_part(src):
+        log = extract_spec_changelog(src, i)
         spec_logs[log.name] = log
+    return spec_logs
 
-    try:
-        example = csv_to_list('export.csv')
-    except Exception:
-        exit("Для работы необходим файл-выгрузка export.csv!")
 
-    spec_names = spec_logs.keys()
-
-    last_lb7_version = common_logs['lb7'].version - 1
-    last_names = get_last_names(example, last_lb7_version)
-
-    not_in = spec_names - last_names
-    if not_in:
-        print("ВАЖНО! Есть в списке изменений, но нет в выгрузке с сайта: ")
-        print(*not_in, sep='\n')
-
+def fill_res(common_logs: t.Dict[str, common_log], spec_logs: t.Dict[str, spec_log], example: t.List[dict]):
     res = []
     res_row = {}
     for lb_type in common_logs:
@@ -212,7 +194,11 @@ def main():
 
             res.append(res_row.copy())
 
-    with open('res.csv', 'w', newline='') as csvfile:
+    return res
+
+
+def write_res(res: t.List[dict], filename='res.csv'):
+    with open(filename, 'w', newline='') as csvfile:
         field_names = res[0].keys()
         writer = csv.DictWriter(csvfile, fieldnames=field_names, dialect='win')
 
@@ -221,6 +207,37 @@ def main():
             writer.writerow(row)
         print(f"Ок, записано строк: {len(res)}. Нажмите любую клавишу для завершения...")
         input()
+
+
+def main():
+    try:
+        source = file_to_list('changes.txt')  # читаем файл с изменениями в список
+    except Exception:
+        exit("Для работы необходим файл с изменениями changes.txt!")
+
+    common_logs = get_common_logs(source)  # выдергиваем "общую часть" для лб
+
+    spec_logs = get_spec_logs(source)  # выдергиваем "частности" для лб
+
+    try:
+        example = csv_to_list('export.csv')
+    except Exception:
+        exit("Для работы необходим файл-выгрузка export.csv!")
+
+    spec_names = spec_logs.keys()
+
+    last_lb7_version = common_logs['lb7'].version - 1
+    last_names = get_last_names(example, last_lb7_version)
+
+    not_in = spec_names - last_names
+    if not_in:
+        print("ВАЖНО! Есть в списке изменений, но нет в выгрузке с сайта: ")
+        print(*not_in, sep='\n')
+
+    res = fill_res(common_logs, spec_logs, example)
+
+    write_res(res)
+
 
 
 if __name__ == '__main__':
