@@ -162,7 +162,8 @@ def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
 # стало     "dd.mm.20yy"
 def fix_date(date: str) -> str:
     d, m, y = date.rstrip('.').split('.')
-    y = '20' + y
+    assert len(y) == 2
+    y = f'20{y}'
     return '.'.join([d, m, y])
 
 
@@ -192,9 +193,8 @@ def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.D
 
 
 #
-def get_changelog_by_name(lb_type: str, lb_name: str, common_logs: t.Dict[str, common_log],
-                          spec_logs: t.Dict[str, spec_log]) -> t.List[str]:
-
+def get_full_log(lb_type: str, lb_name: str, common_logs: t.Dict[str, common_log],
+                 spec_logs: t.Dict[str, spec_log]) -> t.List[str]:
     changelog = common_logs[lb_type].changelog.copy()  # скопируем общую часть
     if lb_name in spec_logs:  # и если есть частность
         changelog += spec_logs[lb_name].changelog  # то и её добавим
@@ -202,22 +202,30 @@ def get_changelog_by_name(lb_type: str, lb_name: str, common_logs: t.Dict[str, c
     return changelog
 
 
+def replace_with_next_num(string: str, num: int) -> str:
+    """
+    Заменяет в исходной строке string все вхождения числа num на num + 1
+    """
+    return string.replace(str(num), str(num + 1))
+
+
 # заполнялка одной записи результата
 def fill_row(row, lb_type, prev_v, new_v, common_logs, spec_logs):
-    res_row = {}
-    res_row['IE_XML_ID'] = row['IE_XML_ID'].replace(str(prev_v), str(new_v))
-    res_row['IE_NAME'] = IE_NAME_PATTERN.format(int_to_dotted_str(new_v))  # пример: Версия 9.8.2
+    return {'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], prev_v),
 
-    changelog = get_changelog_by_name(lb_type, row['IC_GROUP1'], common_logs, spec_logs)
-    res_row['IE_PREVIEW_TEXT'] = list_to_html(changelog)
-    res_row['IE_SORT'] = int(row['IE_SORT']) + 10  # последнее значение сорт. больше предпоследнего
-    res_row['IP_PROP12'] = fix_date(common_logs[lb_type].date)  # надо чуть подправить формат даты
-    res_row['IP_PROP23'] = row['IP_PROP23'].replace(str(prev_v), str(new_v))  # тут путь к файлу
-    res_row['IC_GROUP0'] = row['IC_GROUP0']  # здесь и дальше путь в структуре, он останется как и был
-    res_row['IC_GROUP1'] = row['IC_GROUP1']
-    res_row['IC_GROUP2'] = row['IC_GROUP2']
+            'IE_NAME': IE_NAME_PATTERN.format(int_to_dotted_str(new_v)),
 
-    return res_row
+            'IE_PREVIEW_TEXT': list_to_html(get_full_log(lb_type, row['IC_GROUP1'], common_logs, spec_logs)),
+
+            'IE_SORT': int(row['IE_SORT']) + 10,
+
+            'IP_PROP12': fix_date(common_logs[lb_type].date),
+
+            'IP_PROP23': replace_with_next_num(row['IP_PROP23'], prev_v),
+
+            'IC_GROUP0': row['IC_GROUP0'],
+            'IC_GROUP1': row['IC_GROUP1'],
+            'IC_GROUP2': row['IC_GROUP2']}
 
 
 # заполнялка результата
@@ -228,8 +236,7 @@ def fill_res(common_logs: t.Dict[str, common_log], spec_logs: t.Dict[str, spec_l
         new_v = common_logs[lb_type].version  # новая версия, будем её пихать вместо старой
         prev_v = new_v - 1  # старая версия
         for row in find_row(example, prev_v, lb_type):  # ищем в выгрузке строки нужного типа про пред. версию
-            res_row = fill_row(row, lb_type, prev_v, new_v, common_logs, spec_logs)
-            res.append(res_row.copy())
+            res.append(fill_row(row, lb_type, prev_v, new_v, common_logs, spec_logs))
 
     return res
 
