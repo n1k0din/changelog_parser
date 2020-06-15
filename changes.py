@@ -1,5 +1,6 @@
 import typing as t
 import csv
+import re
 from collections import namedtuple
 
 common_log = namedtuple('common_log', ['name', 'version', 'date', 'changelog'])
@@ -14,7 +15,9 @@ IE_NAME_PATTERN = "Версия {}."
 IC_GROUP2_INDICATORS = {
     'lb6': 'ЛБ 6 CM3',
     'lb6pro': 'ЛБ 6.1 Pro CM3',
-    'lb7': 'ЛБ 7.2'
+    'lb7': 'ЛБ 7.2',
+    'v7': 'v7'
+
 }
 
 # транслятор из описания в программу
@@ -34,7 +37,25 @@ REPLACERS = {
     'THYSSEN': 'THYSSEN TCM',
     'FT9x0': 'THYSSEN FT9X',
     'ШУЛК17': 'ШУЛК 17',
-    'ШУЛК32': 'ШУЛК 32'
+    'ШУЛК32': 'ШУЛК 32',
+    'АЗО-1': 'Адаптер звукового оповещения-1',
+    'ЭПУv7': 'Этажное переговорное устройство',
+    'ПУv7': 'Переговорное устройство',
+    'АТУ-8*2': 'Адаптер телеуправления 8x2',
+    'АТС4x4': 'Адаптер токовых сигналов 4х4',
+    'АЛИ-1': 'Адаптер лампы индикаторной-1',
+    'АСК-16': 'Адаптер сухих контактов 16',
+    'АРВ-8*6': 'Адаптер релейных выходов 8х6',
+    'АПУ-1Н': 'Адаптер переговорного устройства 1Н',
+    'АПИ-1': 'Адаптер последовательного интерфейса'
+
+
+
+
+
+
+
+
 }
 
 
@@ -69,6 +90,29 @@ def find_start_of_special_part(lst: t.List[str]):
             yield i
 
 
+def find_start_of_other_device(lst: t.List[str]):
+    """
+    Ищет индекс начала ченджлога устройств не-ЛБ
+    """
+    pattern = r"\w.*\s+[vV][0-9.]+"
+
+    for i in range(len(lst)):
+        if re.match(pattern, lst[i]):
+            yield i
+
+
+def read_to_end(lst: t.List[str], k: int) -> t.List[str]:
+    """
+    Копирует строки из lst начиная с k и пока не is_block_end
+    """
+    res = []
+    i = k
+    while not is_block_end(lst[i]):
+        res.append(strip_prefix(lst[i]))
+        i += 1
+    return res
+
+
 # формирует описание общей части из списка lst, начиная с индекса k
 # пример:
 # ЛБv6Pro Общая часть
@@ -77,14 +121,16 @@ def find_start_of_special_part(lst: t.List[str]):
 # ...
 # - Разрешена отправка признака движения в основном пакете состояния
 def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
-    name = CHANGELOG_TYPES[get_first_word(lst[k])]  # из первой строки выдираем тип лб
-    _, version, _, date = lst[k + 1].split()  # из второй версию и дату
+    # из первой строки выдираем тип лб
+    name = CHANGELOG_TYPES[get_first_word(lst[k])]
+
+    # из второй версию и дату
+    _, version, _, date = lst[k + 1].split()
+
     version = dotted_str_to_int(version)
-    log_list = []
-    i = k + 2  # и начиная с третьей собираем список
-    while not is_block_end(lst[i]):
-        log_list.append(strip_prefix(lst[i]))
-        i += 1
+
+    # и начиная с третьей собираем список
+    log_list = read_to_end(lst, k + 2)
 
     return common_log(name, version, date, log_list)
 
@@ -96,16 +142,63 @@ def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
 #   - Для фиксации "Аварийной блокировки" по остановке эскалатора установить триггерность яч119=1
 #   - Поддержана спецификация Class4:Type10 - эскалатор
 def extract_spec_changelog(lst: t.List[str], k: int) -> spec_log:
-    name = lst[k].strip("- :")  # из первой выдираем имя
+    # из первой выдираем имя
+    name = lst[k].strip("- :")
+
     if name in REPLACERS:
         name = REPLACERS[name]
-    log_list = []
-    i = k + 1  # начиная со второй собираем список
-    while not is_block_end(lst[i]):
-        log_list.append(strip_prefix(lst[i]))
-        i += 1
+
+    # начиная со второй собираем список
+    log_list = read_to_end(lst, k + 1)
 
     return spec_log(name, log_list)
+
+
+def strip_parentheses(string: str) -> str:
+    """
+    Выбрасывает из строки круглые скобки с содержимым, если строка заканчивается скобкой
+    """
+    if string[-1] == ')':
+        i = string.rfind('(')
+        string = string[:i].rstrip()
+        # print("Стало", string)
+    return string
+
+
+def extract_other_device_changelog(lst: t.List[str], k: int) -> common_log:
+    """
+    формирует описание других устройств из lst, начиная с индекса k
+    пример:
+    АПУ-1Н  V0.0.9 от 05.06.2020
+    - Добавлено формирование IFD: сигнатуры
+    - Переработана работы с шиной CAN для поддержки большого числа устройств
+    - Оптимизирована загрузка шины CAN в установившемся режиме
+
+    Результат: common_log
+    """
+
+    string = lst[k].strip()
+
+    # в заголовке в конце строки может оказаться пояснение в круглых скобках, удалим его
+    # пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
+    string = strip_parentheses(string)
+
+    # ДОПУЩЕНИЕ: версия всегда будет с префиксом 'V' и всегда будет в заголовке
+    # поделим строку на до и после 'V'
+    # используем partition, а не split, т.к. название может состоять из нескольких слов и мы не хотим разбираться
+    name, _, version_and_date = string.partition('V')
+    version, _, date = version_and_date.split()
+
+    date = date.rstrip('.')
+    version = dotted_str_to_int(version)
+
+    name = name.rstrip()
+    if name in REPLACERS:
+        name = REPLACERS[name]
+
+    log_list = read_to_end(lst, k + 1)
+
+    return common_log(name, version, date, log_list)
 
 
 # читает csv в словарь, кодировка utf-8, диалект с разделителем ;
@@ -129,14 +222,24 @@ def file_to_list(filename: str) -> t.List[str]:
     return source
 
 
-# строка 1.2.3 -> число 123
 def dotted_str_to_int(string: str) -> int:
+    """
+    Строка 1.2.3 -> число 123
+    """
     return int(''.join(string.split('.')))
 
 
-# число 789 -> строка 7.8.9
-def int_to_dotted_str(n: int) -> str:
-    return '.'.join(str(n))
+def int_to_dotted_str(n: int, maxlen=3) -> str:
+    """
+    Число 789 -> строка 7.8.9 с дополнением слева до maxlen, если необходимо
+    """
+    string = str(n)
+
+    # дополним слева нулями
+    if len(string) < maxlen:
+        string = '0' * (maxlen - len(string)) + string
+
+    return '.'.join(string)
 
 
 # выдает по списку-таблице записи с нужной версией и нужным типом лб
@@ -158,6 +261,19 @@ def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
     return last_names
 
 
+def get_other_last_names(lst: t.List[dict], logs: dict) -> set:
+    """
+    собирает множество названий из лога, засветившихся в выгрузке
+    """
+    names = set()
+    for log in logs:
+        for row in find_row(lst, logs[log].version - 1, lbtype='v7'):
+            names.add(row['IC_GROUP1'])
+    return names
+
+
+
+
 # было      "dd.mm.yy."
 # стало     "dd.mm.20yy"
 def fix_date(date: str) -> str:
@@ -166,15 +282,18 @@ def fix_date(date: str) -> str:
     return '.'.join([d, m, y])
 
 
-# из [row1, row2, ..., rowN] в
-# <ul>
-# <li>row1</li>
-# <li>row2</li>
-# ...
-# <li>rowN</li>
-# </ul>
-# только всё в одну строку
 def list_to_html(lst):
+    """
+    из [row1, row2, ..., rowN] в
+    <ul>
+    <li>row1</li>
+    <li>row2</li>
+    ...
+    <li>rowN</li>
+    </ul>
+    только всё в одну строку
+    """
+
     html = "<ul>"
     for elem in lst:
         html += "<li>{}</li>".format(elem)
@@ -182,7 +301,7 @@ def list_to_html(lst):
     return html
 
 
-# выдергивает из src при помощи extracter для всех найденных finder
+# выдергивает из src при помощи extractor для всех найденных finder
 def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.Dict:
     logs = {}
     for i in finder(src):
@@ -194,7 +313,6 @@ def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.D
 #
 def get_changelog_by_name(lb_type: str, lb_name: str, common_logs: t.Dict[str, common_log],
                           spec_logs: t.Dict[str, spec_log]) -> t.List[str]:
-
     changelog = common_logs[lb_type].changelog.copy()  # скопируем общую часть
     if lb_name in spec_logs:  # и если есть частность
         changelog += spec_logs[lb_name].changelog  # то и её добавим
@@ -257,20 +375,27 @@ def main():
     # выдергиваем "частности" для лб
     spec_logs = get_logs(source, find_start_of_special_part, extract_spec_changelog)
 
+    other_logs = get_logs(source, find_start_of_other_device, extract_other_device_changelog)
+
     try:
         example = csv_to_list('export.csv')
     except Exception:
         exit("Для работы необходим файл-выгрузка export.csv!")
 
     spec_names = spec_logs.keys()
+    other_names = other_logs.keys()
 
     last_lb7_version = common_logs['lb7'].version - 1
     last_names = get_last_names(example, last_lb7_version)
+    last_other_names = get_other_last_names(example, other_logs)
 
     not_in = spec_names - last_names
+    not_in_other = other_names - last_other_names
     if not_in:
         print("ВАЖНО! Есть в списке изменений, но нет в выгрузке с сайта: ")
         print(*not_in, sep='\n')
+        print(*not_in_other, sep='\n')
+
 
     res = fill_res(common_logs, spec_logs, example)
 
