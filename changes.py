@@ -15,7 +15,9 @@ IE_NAME_PATTERN = "Версия {}."
 IC_GROUP2_INDICATORS = {
     'lb6': 'ЛБ 6 CM3',
     'lb6pro': 'ЛБ 6.1 Pro CM3',
-    'lb7': 'ЛБ 7.2'
+    'lb7': 'ЛБ 7.2',
+    'v7': 'v7'
+
 }
 
 # транслятор из описания в программу
@@ -35,7 +37,25 @@ REPLACERS = {
     'THYSSEN': 'THYSSEN TCM',
     'FT9x0': 'THYSSEN FT9X',
     'ШУЛК17': 'ШУЛК 17',
-    'ШУЛК32': 'ШУЛК 32'
+    'ШУЛК32': 'ШУЛК 32',
+    'АЗО-1': 'Адаптер звукового оповещения-1',
+    'ЭПУv7': 'Этажное переговорное устройство',
+    'ПУv7': 'Переговорное устройство',
+    'АТУ-8*2': 'Адаптер телеуправления 8x2',
+    'АТС4x4': 'Адаптер токовых сигналов 4х4',
+    'АЛИ-1': 'Адаптер лампы индикаторной-1',
+    'АСК-16': 'Адаптер сухих контактов 16',
+    'АРВ-8*6': 'Адаптер релейных выходов 8х6',
+    'АПУ-1Н': 'Адаптер переговорного устройства 1Н',
+    'АПИ-1': 'Адаптер последовательного интерфейса'
+
+
+
+
+
+
+
+
 }
 
 
@@ -241,6 +261,19 @@ def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
     return last_names
 
 
+def get_other_last_names(lst: t.List[dict], logs: dict) -> set:
+    """
+    собирает множество названий из лога, засветившихся в выгрузке
+    """
+    names = set()
+    for log in logs:
+        for row in find_row(lst, logs[log].version - 1, lbtype='v7'):
+            names.add(row['IC_GROUP1'])
+    return names
+
+
+
+
 # было      "dd.mm.yy."
 # стало     "dd.mm.20yy"
 def fix_date(date: str) -> str:
@@ -342,10 +375,7 @@ def main():
     # выдергиваем "частности" для лб
     spec_logs = get_logs(source, find_start_of_special_part, extract_spec_changelog)
 
-    for i in find_start_of_other_device(source):
-        extract_other_device_changelog(source, i)
-
-
+    other_logs = get_logs(source, find_start_of_other_device, extract_other_device_changelog)
 
     try:
         example = csv_to_list('export.csv')
@@ -353,14 +383,19 @@ def main():
         exit("Для работы необходим файл-выгрузка export.csv!")
 
     spec_names = spec_logs.keys()
+    other_names = other_logs.keys()
 
     last_lb7_version = common_logs['lb7'].version - 1
     last_names = get_last_names(example, last_lb7_version)
+    last_other_names = get_other_last_names(example, other_logs)
 
     not_in = spec_names - last_names
+    not_in_other = other_names - last_other_names
     if not_in:
         print("ВАЖНО! Есть в списке изменений, но нет в выгрузке с сайта: ")
         print(*not_in, sep='\n')
+        print(*not_in_other, sep='\n')
+
 
     res = fill_res(common_logs, spec_logs, example)
 
