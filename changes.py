@@ -37,6 +37,10 @@ REPLACERS = {
     'ШУЛК32': 'ШУЛК 32'
 }
 
+# прошивки сортируются по отдельному полю, свежее прошивка - больше число
+# при добавлении будем увеличивать значение сортировки на NEXT_SORT
+SORT_STEP = 10
+
 
 # избавляется от дефиса в начале строки
 def strip_prefix(string: str, prefix='- \n') -> str:
@@ -150,7 +154,7 @@ def find_row(lst: t.List[dict], version: int, lbtype: str) -> dict:
 
 # собирает множество названий исполнений лб определенной версии
 # для чего: найдем все исполнения ЛБ7 для которых была посл. версия прошивки и будем считать это образцовым списком
-# ДОПУЩЕНИЕ: список имён для семерки, прошки и шестёрки будет одинаковым
+# ДОПУЩЕНИЕ: список имён будет одинаковым для всех типов лб
 def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
     last_names = set()
     for row in find_row(lst, last_version, lb_type):
@@ -195,9 +199,15 @@ def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.D
 #
 def get_full_log(lb_type: str, lb_name: str, common_logs: t.Dict[str, common_log],
                  spec_logs: t.Dict[str, spec_log]) -> t.List[str]:
-    changelog = common_logs[lb_type].changelog.copy()  # скопируем общую часть
-    if lb_name in spec_logs:  # и если есть частность
-        changelog += spec_logs[lb_name].changelog  # то и её добавим
+
+    # скопируем общую часть
+    changelog = common_logs[lb_type].changelog.copy()
+
+    # и если есть частность
+    if lb_name in spec_logs:
+
+        # то и её добавим
+        changelog += spec_logs[lb_name].changelog
 
     return changelog
 
@@ -209,20 +219,35 @@ def replace_with_next_num(string: str, num: int) -> str:
     return string.replace(str(num), str(num + 1))
 
 
-# заполнялка одной записи результата
 def fill_row(row, lb_type, prev_v, new_v, common_logs, spec_logs):
-    return {'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], prev_v),
+    """
+    Возвращает запись на основе row: выбирает только нужные поля и обновляет ид, имя, описание и всё такое.
+    """
+    return {
+            # новый ID это старый, в котором номер версии заменён на следующий по порядку
+            # пример: 01r_asud710 -> 01r_asud711
+            'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], prev_v),
 
+            # версия 123 в выгрузке будет иметь вид "Версия 1.2.3."
             'IE_NAME': IE_NAME_PATTERN.format(int_to_dotted_str(new_v)),
 
+            # собираем общий и специфичный ченджлог в один список и преобразуем его в html-список
             'IE_PREVIEW_TEXT': list_to_html(get_full_log(lb_type, row['IC_GROUP1'], common_logs, spec_logs)),
 
-            'IE_SORT': int(row['IE_SORT']) + 10,
+            # поле сортировки: свежее прошивка - больше число
+            'IE_SORT': int(row['IE_SORT']) + SORT_STEP,
 
+            # поле даты обновления: приведём к виду dd.mm.yyyy
             'IP_PROP12': fix_date(common_logs[lb_type].date),
 
+            # IP_PROP23 это путь к файлу
+            # новый путь это старый путь, в котором номер версии заменён на следующий по порядку
+            # было:  /krona/103r_lbkrn631.b07
+            # стало: /krona/103r_lbkrn632.b07
             'IP_PROP23': replace_with_next_num(row['IP_PROP23'], prev_v),
 
+            # это "путь" в логической структуре, его не меняем
+            # пример: Лифтовые блоки -> ЛБ 6 -> OTIS
             'IC_GROUP0': row['IC_GROUP0'],
             'IC_GROUP1': row['IC_GROUP1'],
             'IC_GROUP2': row['IC_GROUP2']}
