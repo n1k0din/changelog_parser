@@ -219,17 +219,25 @@ def replace_with_next_num(string: str, num: int) -> str:
     return string.replace(str(num), str(num + 1))
 
 
-def fill_row(row, lb_type, prev_v, new_v, common_logs, spec_logs):
+def formatted_dotted_next_num(num: int, pattern=IE_NAME_PATTERN) -> str:
+    """
+    Возвращает число num + 1, разделенное точками и приведенное к формату pattern
+    """
+    return pattern.format(int_to_dotted_str(num + 1))
+
+
+def fill_row(row, lb_type, prev_v, common_logs, spec_logs):
     """
     Возвращает запись на основе row: выбирает только нужные поля и обновляет ид, имя, описание и всё такое.
     """
+
     return {
             # новый ID это старый, в котором номер версии заменён на следующий по порядку
             # пример: 01r_asud710 -> 01r_asud711
             'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], prev_v),
 
-            # версия 123 в выгрузке будет иметь вид "Версия 1.2.3."
-            'IE_NAME': IE_NAME_PATTERN.format(int_to_dotted_str(new_v)),
+            # 123 -> "Версия 1.2.4."
+            'IE_NAME': formatted_dotted_next_num(prev_v),
 
             # собираем общий и специфичный ченджлог в один список и преобразуем его в html-список
             'IE_PREVIEW_TEXT': list_to_html(get_full_log(lb_type, row['IC_GROUP1'], common_logs, spec_logs)),
@@ -261,7 +269,7 @@ def fill_res(common_logs: t.Dict[str, common_log], spec_logs: t.Dict[str, spec_l
         new_v = common_logs[lb_type].version  # новая версия, будем её пихать вместо старой
         prev_v = new_v - 1  # старая версия
         for row in find_row(example, prev_v, lb_type):  # ищем в выгрузке строки нужного типа про пред. версию
-            res.append(fill_row(row, lb_type, prev_v, new_v, common_logs, spec_logs))
+            res.append(fill_row(row, lb_type, prev_v, common_logs, spec_logs))
 
     return res
 
