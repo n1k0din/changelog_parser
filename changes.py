@@ -202,14 +202,24 @@ def file_to_list(filename: str) -> t.List[str]:
     return source
 
 
-# строка 1.2.3 -> число 123
 def dotted_str_to_int(string: str) -> int:
+    """
+    Строка 1.2.3 -> число 123
+    """
     return int(''.join(string.split('.')))
 
 
-# число 789 -> строка 7.8.9
-def int_to_dotted_str(n: int) -> str:
-    return '.'.join(str(n))
+def int_to_dotted_str(n: int, maxlen=3) -> str:
+    """
+    Число 789 -> строка 7.8.9 с дополнением слева до maxlen, если необходимо
+    """
+    string = str(n)
+
+    # дополним слева нулями
+    if len(string) < maxlen:
+        string = '0' * (maxlen - len(string)) + string
+
+    return '.'.join(string)
 
 
 # выдает по списку-таблице записи с нужной версией и нужным типом лб
@@ -239,15 +249,18 @@ def fix_date(date: str) -> str:
     return '.'.join([d, m, y])
 
 
-# из [row1, row2, ..., rowN] в
-# <ul>
-# <li>row1</li>
-# <li>row2</li>
-# ...
-# <li>rowN</li>
-# </ul>
-# только всё в одну строку
 def list_to_html(lst):
+    """
+    из [row1, row2, ..., rowN] в
+    <ul>
+    <li>row1</li>
+    <li>row2</li>
+    ...
+    <li>rowN</li>
+    </ul>
+    только всё в одну строку
+    """
+
     html = "<ul>"
     for elem in lst:
         html += "<li>{}</li>".format(elem)
@@ -255,7 +268,7 @@ def list_to_html(lst):
     return html
 
 
-# выдергивает из src при помощи extracter для всех найденных finder
+# выдергивает из src при помощи extractor для всех найденных finder
 def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.Dict:
     logs = {}
     for i in finder(src):
