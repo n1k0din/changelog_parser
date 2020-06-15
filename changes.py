@@ -226,7 +226,7 @@ def formatted_dotted_next_num(num: int, pattern=IE_NAME_PATTERN) -> str:
     return pattern.format(int_to_dotted_str(num + 1))
 
 
-def fill_row(row, lb_type, prev_v, common_logs, spec_logs):
+def fill_row(row, prev_v: int, date: str, full_log: t.List[str]):
     """
     Возвращает запись на основе row: выбирает только нужные поля и обновляет ид, имя, описание и всё такое.
     """
@@ -239,14 +239,14 @@ def fill_row(row, lb_type, prev_v, common_logs, spec_logs):
             # 123 -> "Версия 1.2.4."
             'IE_NAME': formatted_dotted_next_num(prev_v),
 
-            # собираем общий и специфичный ченджлог в один список и преобразуем его в html-список
-            'IE_PREVIEW_TEXT': list_to_html(get_full_log(lb_type, row['IC_GROUP1'], common_logs, spec_logs)),
+            # преобразуем list изменений в html-список
+            'IE_PREVIEW_TEXT': list_to_html(full_log),
 
             # поле сортировки: свежее прошивка - больше число
             'IE_SORT': int(row['IE_SORT']) + SORT_STEP,
 
-            # поле даты обновления: приведём к виду dd.mm.yyyy
-            'IP_PROP12': fix_date(common_logs[lb_type].date),
+            # поле даты
+            'IP_PROP12': date,
 
             # IP_PROP23 это путь к файлу
             # новый путь это старый путь, в котором номер версии заменён на следующий по порядку
@@ -269,7 +269,15 @@ def fill_res(common_logs: t.Dict[str, common_log], spec_logs: t.Dict[str, spec_l
         new_v = common_logs[lb_type].version  # новая версия, будем её пихать вместо старой
         prev_v = new_v - 1  # старая версия
         for row in find_row(example, prev_v, lb_type):  # ищем в выгрузке строки нужного типа про пред. версию
-            res.append(fill_row(row, lb_type, prev_v, common_logs, spec_logs))
+
+            # поле даты обновления: приведём к виду dd.mm.yyyy
+            date = fix_date(common_logs[lb_type].date)
+
+            # собираем полный лог из общего и частного (если есть)
+            # столбец IC_GROUP1 содержит исполнение: otis, thyssen, и т.д.
+            full_log = get_full_log(lb_type, row['IC_GROUP1'], common_logs, spec_logs)
+
+            res.append(fill_row(row, prev_v, date, full_log))
 
     return res
 
