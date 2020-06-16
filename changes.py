@@ -219,11 +219,11 @@ def replace_with_next_num(string: str, num: int) -> str:
     return string.replace(str(num), str(num + 1))
 
 
-def formatted_dotted_next_num(num: int, pattern=IE_NAME_PATTERN) -> str:
+def format_with_dots(num: int, pattern=IE_NAME_PATTERN) -> str:
     """
-    Возвращает число num + 1, разделенное точками и приведенное к формату pattern
+    Возвращает число num, разделенное точками и приведенное к формату pattern
     """
-    return pattern.format(int_to_dotted_str(num + 1))
+    return pattern.format(int_to_dotted_str(num))
 
 
 def fill_row(row, prev_v: int, date: str, full_log: t.List[str]):
@@ -233,11 +233,9 @@ def fill_row(row, prev_v: int, date: str, full_log: t.List[str]):
 
     return {
             # новый ID это старый, в котором номер версии заменён на следующий по порядку
-            # пример: 01r_asud710 -> 01r_asud711
             'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], prev_v),
 
-            # 123 -> "Версия 1.2.4."
-            'IE_NAME': formatted_dotted_next_num(prev_v),
+            'IE_NAME': format_with_dots(prev_v + 1),
 
             # преобразуем list изменений в html-список
             'IE_PREVIEW_TEXT': list_to_html(full_log),
