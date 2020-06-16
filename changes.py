@@ -2,8 +2,8 @@ import typing as t
 import csv
 from collections import namedtuple
 
-common_log = namedtuple('common_log', ['name', 'version', 'date', 'changelog'])
-spec_log = namedtuple('spec_log', ['name', 'changelog'])
+CommonLog = namedtuple('CommonLog', ['name', 'version', 'date', 'changelog'])
+SpecLog = namedtuple('SpecLog', ['name', 'changelog'])
 
 IE_NAME_PATTERN = "Версия {}."
 
@@ -36,10 +36,6 @@ REPLACERS = {
     'ШУЛК17': 'ШУЛК 17',
     'ШУЛК32': 'ШУЛК 32'
 }
-
-# прошивки сортируются по отдельному полю, свежее прошивка - больше число
-# при добавлении будем увеличивать значение сортировки на NEXT_SORT
-SORT_STEP = 10
 
 
 # избавляется от дефиса в начале строки
@@ -80,7 +76,7 @@ def find_start_of_special_part(lst: t.List[str]):
 # - Добавлено формирование IFD: сигнатуры
 # ...
 # - Разрешена отправка признака движения в основном пакете состояния
-def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
+def extract_common_changelog(lst: t.List[str], k: int) -> CommonLog:
     name = CHANGELOG_TYPES[get_first_word(lst[k])]  # из первой строки выдираем тип лб
     _, version, _, date = lst[k + 1].split()  # из второй версию и дату
     version = dotted_str_to_int(version)
@@ -90,7 +86,7 @@ def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
         log_list.append(strip_prefix(lst[i]))
         i += 1
 
-    return common_log(name, version, date, log_list)
+    return CommonLog(name, version, date, log_list)
 
 
 # формирует описание частностей из списка lst, начиная с индекса k
@@ -99,7 +95,7 @@ def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
 #   - При остановке эскалатора - формируется признак "Аварийная блокировка"
 #   - Для фиксации "Аварийной блокировки" по остановке эскалатора установить триггерность яч119=1
 #   - Поддержана спецификация Class4:Type10 - эскалатор
-def extract_spec_changelog(lst: t.List[str], k: int) -> spec_log:
+def extract_spec_changelog(lst: t.List[str], k: int) -> SpecLog:
     name = lst[k].strip("- :")  # из первой выдираем имя
     if name in REPLACERS:
         name = REPLACERS[name]
@@ -109,7 +105,7 @@ def extract_spec_changelog(lst: t.List[str], k: int) -> spec_log:
         log_list.append(strip_prefix(lst[i]))
         i += 1
 
-    return spec_log(name, log_list)
+    return SpecLog(name, log_list)
 
 
 # читает csv в словарь, кодировка utf-8, диалект с разделителем ;
@@ -162,13 +158,14 @@ def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
     return last_names
 
 
-# было      "dd.mm.yy."
-# стало     "dd.mm.20yy"
 def fix_date(date: str) -> str:
-    d, m, y = date.rstrip('.').split('.')
-    assert len(y) == 2
-    y = f'20{y}'
-    return '.'.join([d, m, y])
+    """
+    Приводит дату в виде "dd.mm.yy." к "dd.mm.20yy"
+    """
+    day, month, year = date.rstrip('.').split('.')
+    assert len(year) == 2
+    year = f'20{year}'
+    return f'{day}.{month}.{year}'
 
 
 # из [row1, row2, ..., rowN] в
@@ -196,18 +193,18 @@ def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.D
     return logs
 
 
-#
-def get_full_log(lb_type: str, lb_name: str, common_logs: t.Dict[str, common_log],
-                 spec_logs: t.Dict[str, spec_log]) -> t.List[str]:
+def get_full_log(type: str, model: str, type_changelist: t.Dict[str, CommonLog],
+                 model_changelist: t.Dict[str, SpecLog]) -> t.List[str]:
+    """
+    Устройство имеет тип type и модель model. Изменяния для типа и модели записаны в type_changelist и model_changelist
+    Полный список изменений = изменения для типа + изменения для модели.
+    """
 
-    # скопируем общую часть
-    changelog = common_logs[lb_type].changelog.copy()
+    changelog = type_changelist[type].changelog.copy()
 
-    # и если есть частность
-    if lb_name in spec_logs:
-
-        # то и её добавим
-        changelog += spec_logs[lb_name].changelog
+    # дополним (если есть чем) описанием модели
+    if model in model_changelist:
+        changelog.extend(model_changelist[model].changelog)
 
     return changelog
 
@@ -226,31 +223,38 @@ def format_with_dots(num: int, pattern=IE_NAME_PATTERN) -> str:
     return pattern.format(int_to_dotted_str(num))
 
 
-def fill_row(row, prev_v: int, date: str, full_log: t.List[str]):
+def get_next_sort_key(current: int, step=1):
+    """
+    в месте использования данные сортируются по отдельному ключу по убыванию.
+    по какому ключу будет выполнена сортировка далее - неизвестно, поэтому
+    при добавлении будем увеличивать значение ключа сортировки на step
+    ВНИМАНИЕ: стараемся избегать слишком большого роста ключа, допустимые пределы в месте использования неизвестны!
+    """
+    return int(current) + step
+
+
+def fill_row(row, version: int, update_date: str, changelog: t.List[str]):
     """
     Возвращает запись на основе row: выбирает только нужные поля и обновляет ид, имя, описание и всё такое.
     """
 
     return {
             # новый ID это старый, в котором номер версии заменён на следующий по порядку
-            'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], prev_v),
+            'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], version),
 
-            'IE_NAME': format_with_dots(prev_v + 1),
+            'IE_NAME': format_with_dots(version + 1),
 
             # преобразуем list изменений в html-список
-            'IE_PREVIEW_TEXT': list_to_html(full_log),
+            'IE_PREVIEW_TEXT': list_to_html(changelog),
 
-            # поле сортировки: свежее прошивка - больше число
-            'IE_SORT': int(row['IE_SORT']) + SORT_STEP,
+            'IE_SORT': get_next_sort_key(row['IE_SORT'], step=2),
 
-            # поле даты
-            'IP_PROP12': date,
+            # поле даты обновления
+            'IP_PROP12': update_date,
 
             # IP_PROP23 это путь к файлу
             # новый путь это старый путь, в котором номер версии заменён на следующий по порядку
-            # было:  /krona/103r_lbkrn631.b07
-            # стало: /krona/103r_lbkrn632.b07
-            'IP_PROP23': replace_with_next_num(row['IP_PROP23'], prev_v),
+            'IP_PROP23': replace_with_next_num(row['IP_PROP23'], version),
 
             # это "путь" в логической структуре, его не меняем
             # пример: Лифтовые блоки -> ЛБ 6 -> OTIS
@@ -261,7 +265,7 @@ def fill_row(row, prev_v: int, date: str, full_log: t.List[str]):
 
 # заполнялка результата
 # res это измененый example - для новой версии прошивок
-def fill_res(common_logs: t.Dict[str, common_log], spec_logs: t.Dict[str, spec_log], example: t.List[dict]):
+def fill_res(common_logs: t.Dict[str, CommonLog], spec_logs: t.Dict[str, SpecLog], example: t.List[dict]):
     res = []
     for lb_type in common_logs:  # что там было в общей части в описании
         new_v = common_logs[lb_type].version  # новая версия, будем её пихать вместо старой
@@ -271,9 +275,10 @@ def fill_res(common_logs: t.Dict[str, common_log], spec_logs: t.Dict[str, spec_l
             # поле даты обновления: приведём к виду dd.mm.yyyy
             date = fix_date(common_logs[lb_type].date)
 
-            # собираем полный лог из общего и частного (если есть)
-            # столбец IC_GROUP1 содержит исполнение: otis, thyssen, и т.д.
-            full_log = get_full_log(lb_type, row['IC_GROUP1'], common_logs, spec_logs)
+            # собираем полный лог из общего и частного
+            # в столбце IC_GROUP1 записана модель устройства: otis, thyssen, и т.д.
+            full_log = get_full_log(type=lb_type, model=row['IC_GROUP1'],
+                                    type_changelist=common_logs, model_changelist=spec_logs)
 
             res.append(fill_row(row, prev_v, date, full_log))
 
@@ -300,6 +305,7 @@ def main():
 
     # выдергиваем "общую часть" для лб
     common_logs = get_logs(source, find_start_of_common_part, extract_common_changelog)
+
     # выдергиваем "частности" для лб
     spec_logs = get_logs(source, find_start_of_special_part, extract_spec_changelog)
 
