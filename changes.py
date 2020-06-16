@@ -1,6 +1,6 @@
 import typing as t
 import csv
-
+import re
 from collections import namedtuple
 
 CommonLog = namedtuple('CommonLog', ['name', 'version', 'date', 'changelog'])
@@ -102,15 +102,17 @@ def read_to_end(lst: t.List[str], k: int) -> t.List[str]:
         i += 1
     return res
 
-# формирует описание общей части из списка lst, начиная с индекса k
-# пример:
-# ЛБv6Pro Общая часть
-# Версия 6.3.7 от 07.06.20.
-# - Добавлено формирование IFD: сигнатуры
-# ...
-# - Разрешена отправка признака движения в основном пакете состояния
 
-def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
+def extract_common_changelog(lst: t.List[str], k: int) -> CommonLog:
+    """
+    формирует описание общей части из списка lst, начиная с индекса k
+    пример:
+    ЛБv6Pro Общая часть
+    Версия 6.3.7 от 07.06.20.
+    - Добавлено формирование IFD: сигнатуры
+    - ...
+    - Разрешена отправка признака движения в основном пакете состояния
+    """
     # из первой строки выдираем тип лб
     name = CHANGELOG_TYPES[get_first_word(lst[k])]
 
@@ -125,13 +127,16 @@ def extract_common_changelog(lst: t.List[str], k: int) -> common_log:
     return CommonLog(name, version, date, log_list)
 
 
-# формирует описание частностей из списка lst, начиная с индекса k
-# пример:
-# - THYSSEN_GEC:
-#   - При остановке эскалатора - формируется признак "Аварийная блокировка"
-#   - Для фиксации "Аварийной блокировки" по остановке эскалатора установить триггерность яч119=1
-#   - Поддержана спецификация Class4:Type10 - эскалатор
-def extract_spec_changelog(lst: t.List[str], k: int) -> spec_log:
+def extract_spec_changelog(lst: t.List[str], k: int) -> SpecLog:
+    """
+    # формирует описание частностей из списка lst, начиная с индекса k
+    # пример:
+    # - THYSSEN_GEC:
+    #   - При остановке эскалатора - формируется признак "Аварийная блокировка"
+    #   - Для фиксации "Аварийной блокировки" по остановке эскалатора установить триггерность яч119=1
+    #   - Поддержана спецификация Class4:Type10 - эскалатор
+    """
+
     # из первой выдираем имя
     name = lst[k].strip("- :")
 
@@ -147,15 +152,15 @@ def extract_spec_changelog(lst: t.List[str], k: int) -> spec_log:
 def strip_parentheses(string: str) -> str:
     """
     Выбрасывает из строки круглые скобки с содержимым, если строка заканчивается скобкой
+    Пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
     """
     if string[-1] == ')':
         i = string.rfind('(')
         string = string[:i].rstrip()
-        # print("Стало", string)
     return string
 
 
-def extract_other_device_changelog(lst: t.List[str], k: int) -> common_log:
+def extract_other_device_changelog(lst: t.List[str], k: int) -> CommonLog:
     """
     формирует описание других устройств из lst, начиная с индекса k
     пример:
@@ -170,7 +175,6 @@ def extract_other_device_changelog(lst: t.List[str], k: int) -> common_log:
     string = lst[k].strip()
 
     # в заголовке в конце строки может оказаться пояснение в круглых скобках, удалим его
-    # пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
     string = strip_parentheses(string)
 
     # ДОПУЩЕНИЕ: версия всегда будет с префиксом 'V' и всегда будет в заголовке
@@ -188,11 +192,13 @@ def extract_other_device_changelog(lst: t.List[str], k: int) -> common_log:
 
     log_list = read_to_end(lst, k + 1)
 
-    return common_log(name, version, date, log_list)
+    return CommonLog(name, version, date, log_list)
 
 
-# читает csv в словарь, кодировка utf-8, диалект с разделителем ;
 def csv_to_list(filename: str) -> t.List[dict]:
+    """
+    читает csv в словарь, кодировка utf-8, диалект с разделителем ;
+    """
     csv.register_dialect('win', delimiter=';')
     example = []
     with open(filename, encoding='utf-8') as csv_file:
@@ -203,8 +209,10 @@ def csv_to_list(filename: str) -> t.List[dict]:
     return example
 
 
-# текстовый файл в список с обрезкой справа
 def file_to_list(filename: str) -> t.List[str]:
+    """
+    Текстовый файл в список с обрезкой справа
+    """
     source = []
     with open(filename, encoding='utf-8') as f:
         for elem in f:
@@ -221,7 +229,7 @@ def dotted_str_to_int(string: str) -> int:
 
 def int_to_dotted_str(n: int, maxlen=3) -> str:
     """
-    Число 789 -> строка 7.8.9 с дополнением слева до maxlen, если необходимо
+    Число 789 -> строка 7.8.9 с дополнением слева до maxlen слева, если необходимо
     """
     string = str(n)
 
@@ -232,20 +240,24 @@ def int_to_dotted_str(n: int, maxlen=3) -> str:
     return '.'.join(string)
 
 
-# выдает по списку-таблице записи с нужной версией и нужным типом лб
-def find_row(lst: t.List[dict], version: int, lbtype: str, pattern="Версия {}.") -> dict:
+def find_row(lst: t.List[dict], version: int, type: str, pattern="Версия {}.") -> dict:
+    """
+    Выдает по списку-таблице записи с нужной версией и нужным типом оборудования"
+    """
+
     formatted_version = pattern.format(int_to_dotted_str(version))
     for row in lst:
         if row['IE_NAME'] == formatted_version and \
-                row['IC_GROUP2'] == IC_GROUP2_INDICATORS[lbtype]:
+                row['IC_GROUP2'] == IC_GROUP2_INDICATORS[type]:
             yield row
 
 
-# собирает множество названий исполнений лб определенной версии
-# для чего: найдем все исполнения ЛБ7 для которых была посл. версия прошивки и будем считать это образцовым списком
-# ДОПУЩЕНИЕ: список имён будет одинаковым для всех типов лб
-
 def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
+    """
+    собирает множество названий исполнений лб определенной версии
+    для чего: найдем все исполнения ЛБ7 для которых была посл. версия прошивки и будем считать это образцовым списком
+    ДОПУЩЕНИЕ: список имён будет одинаковым для всех типов лб
+    """
     last_names = set()
     for row in find_row(lst, last_version, lb_type):
         last_names.add(row['IC_GROUP1'])
@@ -258,7 +270,7 @@ def get_other_last_names(lst: t.List[dict], logs: dict) -> set:
     """
     names = set()
     for log in logs:
-        for row in find_row(lst, logs[log].version - 1, lbtype='v7'):
+        for row in find_row(lst, logs[log].version - 1, type='v7'):
             names.add(row['IC_GROUP1'])
     return names
 
@@ -292,9 +304,10 @@ def list_to_html(lst):
     return html
 
 
-# выдергивает из src при помощи extractor для всех найденных finder
-
 def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.Dict:
+    """
+    Выдергивает из src при помощи extractor для всех найденных finder
+    """
     logs = {}
     for i in finder(src):
         log = extractor(src, i)
@@ -372,9 +385,11 @@ def fill_row(row, version: int, update_date: str, changelog: t.List[str]):
             'IC_GROUP2': row['IC_GROUP2']}
 
 
-# заполнялка результата
-# res это измененый example - для новой версии прошивок
 def fill_res(common_logs: t.Dict[str, CommonLog], spec_logs: t.Dict[str, SpecLog], example: t.List[dict]):
+    """
+    заполнялка результата
+    res это измененый example - для новой версии прошивок
+    """
     res = []
     for lb_type in common_logs:  # что там было в общей части в описании
         new_v = common_logs[lb_type].version  # новая версия, будем её пихать вместо старой
@@ -438,7 +453,6 @@ def main():
         print("ВАЖНО! Есть в списке изменений, но нет в выгрузке с сайта: ")
         print(*not_in, sep='\n')
         print(*not_in_other, sep='\n')
-
 
     res = fill_res(common_logs, spec_logs, example)
 
