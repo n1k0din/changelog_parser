@@ -6,7 +6,6 @@ from collections import namedtuple
 CommonLog = namedtuple('CommonLog', ['name', 'version', 'date', 'changelog'])
 SpecLog = namedtuple('SpecLog', ['name', 'changelog'])
 
-
 # в выгрузке и описании ЛБ идентифицируют по-разному
 # в программе используются сл. идентификаторы: lb6, lb6pro, lb7
 
@@ -248,8 +247,18 @@ def find_row(lst: t.List[dict], version: int, type: str, pattern="Версия {
     formatted_version = pattern.format(int_to_dotted_str(version))
     for row in lst:
         if row['IE_NAME'] == formatted_version and \
-                row['IC_GROUP2'] == IC_GROUP2_INDICATORS[type]:
+                row['IC_GROUP2'] == IC_GROUP2_INDICATORS.get(type):
             yield row
+
+
+def get_row(lst: t.List[dict], type: str, model: str, version: int, pattern="Версия {}.") -> dict:
+    formatted_version = pattern.format(int_to_dotted_str(version))
+
+    for row in lst:
+        if row['IC_GROUP2'] == IC_GROUP2_INDICATORS.get(type) and \
+                row['IC_GROUP1'] == model and \
+                row['IE_NAME'] == formatted_version:
+            return row
 
 
 def get_last_names(lst: t.List[dict], last_version: int, lb_type='lb7') -> set:
@@ -361,28 +370,28 @@ def fill_row(row, version: int, update_date: str, changelog: t.List[str]):
     """
 
     return {
-            # новый ID это старый, в котором номер версии заменён на следующий по порядку
-            'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], version),
+        # новый ID это старый, в котором номер версии заменён на следующий по порядку
+        'IE_XML_ID': replace_with_next_num(row['IE_XML_ID'], version),
 
-            'IE_NAME': format_with_dots(version + 1),
+        'IE_NAME': format_with_dots(version + 1),
 
-            # преобразуем list изменений в html-список
-            'IE_PREVIEW_TEXT': list_to_html(changelog),
+        # преобразуем list изменений в html-список
+        'IE_PREVIEW_TEXT': list_to_html(changelog),
 
-            'IE_SORT': get_next_sort_key(row['IE_SORT'], step=2),
+        'IE_SORT': get_next_sort_key(row['IE_SORT'], step=2),
 
-            # поле даты обновления
-            'IP_PROP12': update_date,
+        # поле даты обновления
+        'IP_PROP12': update_date,
 
-            # IP_PROP23 это путь к файлу
-            # новый путь это старый путь, в котором номер версии заменён на следующий по порядку
-            'IP_PROP23': replace_with_next_num(row['IP_PROP23'], version),
+        # IP_PROP23 это путь к файлу
+        # новый путь это старый путь, в котором номер версии заменён на следующий по порядку
+        'IP_PROP23': replace_with_next_num(row['IP_PROP23'], version),
 
-            # это "путь" в логической структуре, его не меняем
-            # пример: Лифтовые блоки -> ЛБ 6 -> OTIS
-            'IC_GROUP0': row['IC_GROUP0'],
-            'IC_GROUP1': row['IC_GROUP1'],
-            'IC_GROUP2': row['IC_GROUP2']}
+        # это "путь" в логической структуре, его не меняем
+        # пример: Лифтовые блоки -> ЛБ 6 -> OTIS
+        'IC_GROUP0': row['IC_GROUP0'],
+        'IC_GROUP1': row['IC_GROUP1'],
+        'IC_GROUP2': row['IC_GROUP2']}
 
 
 def fill_res(common_logs: t.Dict[str, CommonLog], spec_logs: t.Dict[str, SpecLog], example: t.List[dict]):
@@ -407,6 +416,19 @@ def fill_res(common_logs: t.Dict[str, CommonLog], spec_logs: t.Dict[str, SpecLog
             res.append(fill_row(row, prev_v, date, full_log))
 
     return res
+
+
+def fill_other_res(other_logs: t.Dict[str, CommonLog], example: t.List[dict]) -> t.List[str]:
+    res = []
+    for device in other_logs:
+        new_v = other_logs[device].version
+        prev_v = new_v - 1
+        row = get_row(example, 'v7', device, prev_v)
+        if row:
+            update_date = other_logs[device].date
+            res.append(fill_row(row, prev_v, update_date, other_logs[device].changelog))
+    return res
+
 
 
 def write_res(res: t.List[dict], filename='res.csv'):
@@ -455,6 +477,8 @@ def main():
         print(*not_in_other, sep='\n')
 
     res = fill_res(common_logs, spec_logs, example)
+    res2 = fill_other_res(other_logs, example)
+    res.extend(res2)
 
     write_res(res)
 
