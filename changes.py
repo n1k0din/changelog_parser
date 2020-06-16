@@ -5,8 +5,6 @@ from collections import namedtuple
 CommonLog = namedtuple('CommonLog', ['name', 'version', 'date', 'changelog'])
 SpecLog = namedtuple('SpecLog', ['name', 'changelog'])
 
-IE_NAME_PATTERN = "Версия {}."
-
 # в выгрузке и описании ЛБ идентифицируют по-разному
 # в программе используются сл. идентификаторы: lb6, lb6pro, lb7
 
@@ -140,8 +138,8 @@ def int_to_dotted_str(n: int) -> str:
 
 
 # выдает по списку-таблице записи с нужной версией и нужным типом лб
-def find_row(lst: t.List[dict], version: int, lbtype: str) -> dict:
-    formatted_version = IE_NAME_PATTERN.format(int_to_dotted_str(version))
+def find_row(lst: t.List[dict], version: int, lbtype: str, pattern="Версия {}.") -> dict:
+    formatted_version = pattern.format(int_to_dotted_str(version))
     for row in lst:
         if row['IE_NAME'] == formatted_version and \
                 row['IC_GROUP2'] == IC_GROUP2_INDICATORS[lbtype]:
@@ -216,7 +214,7 @@ def replace_with_next_num(string: str, num: int) -> str:
     return string.replace(str(num), str(num + 1))
 
 
-def format_with_dots(num: int, pattern=IE_NAME_PATTERN) -> str:
+def format_with_dots(num: int, pattern="Версия {}.") -> str:
     """
     Возвращает число num, разделенное точками и приведенное к формату pattern
     """
