@@ -107,7 +107,7 @@ def read_to_end(lst: t.List[str], k: int) -> t.List[str]:
     """
     res = []
     i = k
-    while not is_block_end(lst[i]):
+    while i < len(res) and not is_block_end(lst[i]):
         res.append(strip_prefix(lst[i]))
         i += 1
     return res
@@ -159,17 +159,6 @@ def extract_spec_changelog(lst: t.List[str], k: int) -> Changelog:
     return Changelog(name, 0, "", log_list)
 
 
-def strip_parentheses(string: str) -> str:
-    """
-    Выбрасывает из строки круглые скобки с содержимым, если строка заканчивается скобкой
-    Пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
-    """
-    if string[-1] == ')':
-        i = string.rfind('(')
-        string = string[:i].rstrip()
-    return string
-
-
 def extract_other_device_changelog(lst: t.List[str], k: int) -> Changelog:
     """
     формирует описание других устройств из lst, начиная с индекса k
@@ -178,8 +167,6 @@ def extract_other_device_changelog(lst: t.List[str], k: int) -> Changelog:
     - Добавлено формирование IFD: сигнатуры
     - Переработана работы с шиной CAN для поддержки большого числа устройств
     - Оптимизирована загрузка шины CAN в установившемся режиме
-
-    Результат: common_log
     """
 
     string = lst[k].strip()
@@ -203,6 +190,20 @@ def extract_other_device_changelog(lst: t.List[str], k: int) -> Changelog:
     log_list = read_to_end(lst, k + 1)
 
     return Changelog(name, version, date, log_list)
+
+
+def strip_parentheses(string: str) -> str:
+    """
+    Выбрасывает из строки круглые скобки с содержимым, если строка заканчивается скобкой
+    Пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
+    """
+    if string[-1] == ')':
+        i = string.rfind('(')
+        string = string[:i].rstrip()
+    return string
+
+
+
 
 
 def csv_to_list(filename: str) -> t.List[dict]:
