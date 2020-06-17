@@ -48,32 +48,42 @@ REPLACERS = {
 }
 
 
-# избавляется от дефиса в начале строки
 def strip_prefix(string: str, prefix='- \n') -> str:
+    """
+    избавляется от дефиса в начале строки
+    """
     return string.lstrip(prefix)
 
 
-# возвращает текст до первого пробела
 def get_first_word(line: str) -> str:
+    """
+    возвращает текст до первого пробела
+    """
     return line[:line.find(" ")]
 
 
-# строка считается концом блока, если она пустая или начинается с ===
 def is_block_end(line: str) -> bool:
+    """
+    строка считается концом блока, если она пустая или начинается с ===
+    """
     return line == "" or line.startswith("===")
 
 
-# генерирует индекс начала описания общей части
-# содержит "Общая часть"
 def find_start_of_common_part(lst: list):
+    """
+    генерирует индекс начала описания общей части
+    содержит "Общая часть"
+    """
     for i in range(len(lst)):
         if lst[i].find("Общая часть") != -1:
             yield i
 
 
-# генерирует индекс начала описания частостей
-# на дефис-пробел начинается, на : заканчивается
 def find_start_of_special_part(lst: t.List[str]):
+    """
+    генерирует индекс начала описания частостей
+    на дефис-пробел начинается, на : заканчивается
+    """
     for i in range(len(lst)):
         if lst[i].startswith('- ') and lst[i].endswith(':'):
             yield i
