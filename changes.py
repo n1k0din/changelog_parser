@@ -3,8 +3,9 @@ import csv
 import re
 from collections import namedtuple
 
-CommonLog = namedtuple('CommonLog', ['name', 'version', 'date', 'changelog'])
-SpecLog = namedtuple('SpecLog', ['name', 'changelog'])
+# CommonLog = namedtuple('CommonLog', ['name', 'version', 'date', 'changelog'])
+# SpecLog = namedtuple('SpecLog', ['name', 'changelog'])
+Changelog = namedtuple('Changelog', ['name', 'version', 'date', 'changelist'])
 
 # в выгрузке и описании ЛБ идентифицируют по-разному
 # в программе используются сл. идентификаторы: lb6, lb6pro, lb7
@@ -106,13 +107,13 @@ def read_to_end(lst: t.List[str], k: int) -> t.List[str]:
     """
     res = []
     i = k
-    while not is_block_end(lst[i]):
+    while i < len(res) and not is_block_end(lst[i]):
         res.append(strip_prefix(lst[i]))
         i += 1
     return res
 
 
-def extract_common_changelog(lst: t.List[str], k: int) -> CommonLog:
+def extract_common_changelog(lst: t.List[str], k: int) -> Changelog:
     """
     формирует описание общей части из списка lst, начиная с индекса k
     пример:
@@ -133,10 +134,10 @@ def extract_common_changelog(lst: t.List[str], k: int) -> CommonLog:
     # и начиная с третьей собираем список
     log_list = read_to_end(lst, k + 2)
 
-    return CommonLog(name, version, date, log_list)
+    return Changelog(name, version, date, log_list)
 
 
-def extract_spec_changelog(lst: t.List[str], k: int) -> SpecLog:
+def extract_spec_changelog(lst: t.List[str], k: int) -> Changelog:
     """
     # формирует описание частностей из списка lst, начиная с индекса k
     # пример:
@@ -155,21 +156,10 @@ def extract_spec_changelog(lst: t.List[str], k: int) -> SpecLog:
     # начиная со второй собираем список
     log_list = read_to_end(lst, k + 1)
 
-    return SpecLog(name, log_list)
+    return Changelog(name, 0, "", log_list)
 
 
-def strip_parentheses(string: str) -> str:
-    """
-    Выбрасывает из строки круглые скобки с содержимым, если строка заканчивается скобкой
-    Пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
-    """
-    if string[-1] == ')':
-        i = string.rfind('(')
-        string = string[:i].rstrip()
-    return string
-
-
-def extract_other_device_changelog(lst: t.List[str], k: int) -> CommonLog:
+def extract_other_device_changelog(lst: t.List[str], k: int) -> Changelog:
     """
     формирует описание других устройств из lst, начиная с индекса k
     пример:
@@ -177,8 +167,6 @@ def extract_other_device_changelog(lst: t.List[str], k: int) -> CommonLog:
     - Добавлено формирование IFD: сигнатуры
     - Переработана работы с шиной CAN для поддержки большого числа устройств
     - Оптимизирована загрузка шины CAN в установившемся режиме
-
-    Результат: common_log
     """
 
     string = lst[k].strip()
@@ -201,7 +189,21 @@ def extract_other_device_changelog(lst: t.List[str], k: int) -> CommonLog:
 
     log_list = read_to_end(lst, k + 1)
 
-    return CommonLog(name, version, date, log_list)
+    return Changelog(name, version, date, log_list)
+
+
+def strip_parentheses(string: str) -> str:
+    """
+    Выбрасывает из строки круглые скобки с содержимым, если строка заканчивается скобкой
+    Пример: АMB-1 V0.0.2 от 05.06.2020. (Адаптер ModBUS)
+    """
+    if string[-1] == ')':
+        i = string.rfind('(')
+        string = string[:i].rstrip()
+    return string
+
+
+
 
 
 def csv_to_list(filename: str) -> t.List[dict]:
@@ -334,20 +336,20 @@ def get_logs(src: t.List[str], finder: t.Callable, extractor: t.Callable) -> t.D
     return logs
 
 
-def get_full_log(type: str, model: str, type_changelist: t.Dict[str, CommonLog],
-                 model_changelist: t.Dict[str, SpecLog]) -> t.List[str]:
+def get_full_log(type: str, model: str, type_changelogs: t.Dict[str, Changelog],
+                 model_changelogs: t.Dict[str, Changelog]) -> t.List[str]:
     """
-    Устройство имеет тип type и модель model. Изменения для типа и модели записаны в type_changelist и model_changelist
+    Устройство имеет тип type и модель model. Изменения для типа и модели записаны в type_changelogs и model_changelogs
     Полный список изменений = изменения для типа + изменения для модели.
     """
 
-    changelog = type_changelist[type].changelog.copy()
+    changelist = type_changelogs[type].changelist.copy()
 
     # дополним (если есть чем) описанием модели
-    if model in model_changelist:
-        changelog.extend(model_changelist[model].changelog)
+    if model in model_changelogs:
+        changelist.extend(model_changelogs[model].changelist)
 
-    return changelog
+    return changelist
 
 
 def replace_with_next_num(string: str, num: int) -> str:
@@ -404,7 +406,7 @@ def fill_row(row, version: int, update_date: str, changelog: t.List[str]):
         'IC_GROUP2': row['IC_GROUP2']}
 
 
-def fill_res(common_logs: t.Dict[str, CommonLog], spec_logs: t.Dict[str, SpecLog], example: t.List[dict]):
+def fill_res(common_logs: t.Dict[str, Changelog], spec_logs: t.Dict[str, Changelog], example: t.List[dict]):
     """
     заполнялка результата
     res это измененый example - для новой версии прошивок
@@ -421,14 +423,14 @@ def fill_res(common_logs: t.Dict[str, CommonLog], spec_logs: t.Dict[str, SpecLog
             # собираем полный лог из общего и частного
             # в столбце IC_GROUP1 записана модель устройства: otis, thyssen, и т.д.
             full_log = get_full_log(type=lb_type, model=row['IC_GROUP1'],
-                                    type_changelist=common_logs, model_changelist=spec_logs)
+                                    type_changelogs=common_logs, model_changelogs=spec_logs)
 
             res.append(fill_row(row, prev_v, date, full_log))
 
     return res
 
 
-def fill_other_res(other_logs: t.Dict[str, CommonLog], example: t.List[dict]) -> t.List[str]:
+def fill_other_res(other_logs: t.Dict[str, Changelog], example: t.List[dict]) -> t.List[dict]:
     res = []
     for device in other_logs:
         new_v = other_logs[device].version
@@ -436,9 +438,8 @@ def fill_other_res(other_logs: t.Dict[str, CommonLog], example: t.List[dict]) ->
         row = get_row(example, 'v7', device, prev_v)
         if row:
             update_date = other_logs[device].date
-            res.append(fill_row(row, prev_v, update_date, other_logs[device].changelog))
+            res.append(fill_row(row, prev_v, update_date, other_logs[device].changelist))
     return res
-
 
 
 def write_res(res: t.List[dict], filename='res.csv'):
